@@ -1,0 +1,169 @@
+#cloud-config
+users:
+- name: ${user}
+  passwd: "${passwd}"
+  ssh_authorized_keys:
+%{ for key in ssh_keys ~}
+  - "${key}"
+%{ endfor ~}
+  groups: sudo
+  shell: /bin/bash
+  sudo: ['ALL=(ALL) NOPASSWD:ALL']
+  lock_passwd: false
+
+#~ # This is not working!
+#~ package_update: true
+#~ packages:
+  #~ ...
+
+write_files:
+- path: /root/pkgs.txt
+  permissions: '0644'
+  content: |
+    - pwgen
+    - micro
+    - python3-venv
+    # Additional tools
+    - curl
+    - zip
+    - unzip
+    - jq
+    - awscli
+    - dos2unix
+    - wget
+    - less
+    - nfs-common
+    - ssl-cert
+    - postgresql-client
+    # Using this for wordpress hosting
+    - nginx
+    - php8.1-fpm
+    - php8.1-cli
+    - php8.1-pgsql
+    - php8.1-xml
+    - php8.1-mbstring
+    - php8.1-curl
+    - php8.1-zip
+    - php8.1-gd
+    - php8.1-intl
+    - php8.1-bcmath
+    - php8.1-opcache
+- path: /tmp/wp-install.sh
+  permissions: '0755'
+  content: ${installer}
+  encoding: gz+b64
+- path: /tmp/db-install.sh
+  permissions: '0755'
+  content: ${db_inst}
+  encoding: gz+b64
+- path: /tmp/db-drop.sh
+  permissions: '0755'
+  content: ${db_drop}
+  encoding: gz+b64
+- path: /root/install-opts.sh
+  permissions: '0644'
+  content: |
+%{ for key,val in wp_config }
+     ${key}=${jsonencode(val)}
+%{ endfor }
+- path: /tmp/nginx.cnfg
+  permissions: '0644'
+  content: |
+    # ── HTTP — permanent redirect to HTTPS ───────────────────────
+    server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+        server_name _;
+        #~ return 301 https://$host$request_uri;
+    #~ }
+    #~ # ── HTTPS — WordPress with snakeoil self-signed certificate ──
+    #~ server {
+        #~ listen 443 ssl;
+        #~ listen [::]:443 ssl;
+        #~ server_name _;
+        #~ root ${wp_config.WP_ROOT};
+        #~ index index.php;
+        #~ #
+        #~ # Snakeoil certificate (Ubuntu ssl-cert package)
+        #~ # Replace with a real certificate for production traffic.
+        #~ # The ELB in front of this instance presents its own cert to clients;
+        #~ # this certificate secures the ELB-to-backend leg only.
+        #~ ssl_certificate     /etc/ssl/certs/ssl-cert-snakeoil.pem;
+        #~ ssl_certificate_key /etc/ssl/private/ssl-cert-snakeoil.key;
+        #~ #
+        #~ # Modern TLS settings
+        #~ ssl_protocols             TLSv1.2 TLSv1.3;
+        #~ ssl_ciphers               ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+        #~ ssl_prefer_server_ciphers off;
+        #~ ssl_session_cache         shared:SSL:10m;
+        #~ ssl_session_timeout       1d;
+        #~ ssl_session_tickets       off;
+        #
+        location / {
+            try_files $uri $uri/ /index.php?$args;
+        }
+        #
+        location ~ \.php$ {
+            include snippets/fastcgi-php.conf;
+            fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_param HTTPS on;
+            include fastcgi_params;
+        }
+        #
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
+            log_not_found off;
+        }
+        #
+        location = /favicon.ico { log_not_found off; access_log off; }
+        location = /robots.txt  { allow all; log_not_found off; access_log off; }
+        location ~ /\. { deny all; }
+    }
+
+runcmd:
+- sed -i~ -e 's/^127\.0\.0\.1\s*.*$/127.0.0.1 localhost '$(uname -n)'/' /etc/hosts
+# We need to do this as cloud-init is ignore package installations
+- apt-get update -y
+- "DEBIAN_FRONTEND=noninteractive apt-get install -y $(sed -e 's/#.*//' -e 's/^ *- / /' /root/pkgs.txt)"
+
+# Configure nginx
+- cp -v /tmp/nginx.cnfg /etc/nginx/sites-available/wordpress
+- ln -sf /etc/nginx/sites-available/wordpress /etc/nginx/sites-enabled/wordpress
+- rm -f /etc/nginx/sites-enabled/default
+- "nginx -t && systemctl reload nginx || systemctl start nginx"
+
+# Make 100% sure services are running
+- systemctl enable nginx php8.1-fpm
+- systemctl restart php8.1-fpm nginx
+
+# Set-up shared SFS
+- mkdir -p "${wp_config.SFS_MOUNT}"
+- |
+    if ! grep -qF "${wp_config.SFS_MOUNT}" /etc/fstab; then
+      echo "${wp_config.SFS_EXPORT}  ${wp_config.SFS_MOUNT}  nfs  defaults,_netdev,nofail,hard,timeo=600,retrans=5  0 0" >> /etc/fstab
+    fi
+    mount -av
+
+# Install CES agent
+- >
+    cd /usr/local &&
+    curl -k -O https://uniagent-eu-de.obs.eu-de.otc.t-systems.com/package/agent_install.sh &&
+    bash agent_install.sh
+    -r eu-de -u 0.1.9 -t 2.7.2
+    -o otc.t-systems.com
+    -d agent.ces.${region}.otc.t-systems.com
+# Install WordPress database
+- >
+    /tmp/db-install.sh
+    -h ${jsonencode(wp_config.DB_HOST)}
+    -S root
+    -s ${jsonencode(wp_config.DB_ADM_PASSWD)}
+    -d ${jsonencode(wp_config.DB_NAME)}
+    -u ${jsonencode(wp_config.DB_USER)}
+    -p ${jsonencode(wp_config.DB_PASSWORD)}
+# Install WordPress proper
+- /tmp/wp-install.sh
+
+

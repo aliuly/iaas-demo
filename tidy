@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# Clean-up only things that needs clean-up
+#
+tf=$(dirname "$0")/tf
+
+#
+#    -target=module.apps
+#
+# We can't delete this because of the opentelekomcloud provider bug
+#
+#    -target=module.frontend.
+#
+#  -target=module.frontend.opentelekomcloud_lb_listener_v3.https
+#  -target=module.frontend.opentelekomcloud_lb_pool_v3.wordpress_http
+#  -target=module.frontend.opentelekomcloud_lb_loadbalancer_v3.wordpress
+#
+# Tries to delete lb_listener first which fails.
+#
+
+target_frontend="
+  -target=module.frontend.opentelekomcloud_networking_port_secgroup_associate_v2.elb_sg
+  -target=module.frontend.opentelekomcloud_lb_monitor_v3.wordpress
+  -target=module.frontend.opentelekomcloud_lb_listener_v3.http_redirect
+  -target=module.frontend.opentelekomcloud_dns_recordset_v2.dnsint_a_name
+"
+$tf destroy \
+    -target=module.vpn \
+    -target=module.datastore \
+    -target=module.bastion \
+    -target=module.apps \
+    $target_frontend
+
+

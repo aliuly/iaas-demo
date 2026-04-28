@@ -1,0 +1,66 @@
+#!/bin/sh
+#
+# Export TF vars files
+#
+set -euf ; (set -o pipefail 2>/dev/null) && set -o pipefail
+
+usage() {
+  cat <<-EOF
+	Usage: $0 [options] [zipfile]
+
+	Export TF vars files
+
+	Options:
+	* -l|-t|--list : Just show a list, don't export to file.
+	* -S|--no-links : Ignore symlinks
+	* -s|--links : Include symlinks (this is the default)
+	* -d|--chdir PATH : Export from the given directory
+	EOF
+  exit 1
+}
+
+[ $# -eq 0 ] && usage
+
+list=false
+symlinks=true
+srcdir=$(readlink -f .)
+
+while [ $# -gt 0 ]
+do
+  case "$1" in
+  -l|-c|--list) list=true ;;
+  -S|--no-links) symlinks=false ;;
+  -s|--links) symlinks=true ;;
+  -d|--chdir) srcdir=$(readlink -f "$2") ; shift ;;
+  *) break ;;
+  esac
+  shift
+done
+
+! $list && [ $# -ne 1 ] && usage
+
+(
+  cd "$srcdir"
+  find . \
+    '(' \
+      -name '*.tfvars' \
+      -o -name 'backend.hcl' \
+      -o -name '*.pem' \
+      -o -name '*.crt' \
+      -o -name '*.key' \
+      -o -name '*.env' \
+      -o -name '*.env.sh' \
+    ')' \
+    ! -name 'inputs.tfvars' \
+    $($symlinks || echo ! -type l) \
+    ! -type d -print
+) | (
+  if $list || [ x"$1" = x"-" ] ; then
+    cd "$srcdir"
+    xargs -d '\n' ls -lh
+  else
+    zipfile=$(readlink -f "$1")
+    cd "$srcdir"
+    zip --symlink -@ "$zipfile"
+  fi
+)

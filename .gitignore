@@ -1,3 +1,14 @@
+# Custom patters
+*.env
+*.env.sh
+clouds.yaml
+secure.yaml
+backend.hcl
+*.crt
+*.key
+*.pem
+
+
 # Local .terraform directories
 .terraform/
 

@@ -1,0 +1,60 @@
+#!/bin/sh
+#
+# Export TF vars files
+#
+set -euf ; (set -o pipefail 2>/dev/null) && set -o pipefail
+
+usage() {
+  cat <<-EOF
+	Usage: $0 [options] [zipfile]
+
+	Pack code
+
+	Options:
+	-t : Just show what files will be selected
+	-d|--chdir PATH : chdir
+	EOF
+  exit 1
+}
+
+test=false
+srcdir="$(readlink -f .)"
+
+while [ $# -gt 0 ]
+do
+  case "$1" in
+  -t) test=true ;;
+  -d|--chdir) srcdir=$(readlink -f "$2") ; shift ;;
+  *) break ;;
+  esac
+  shift
+done
+
+srcpath=$(dirname "$srcdir")
+srcname=$(basename "$srcdir")
+
+! $test && [ $# -ne 1 ] && usage
+
+(
+  cd "$srcpath"
+  find "$(basename "$srcdir")" \
+    ! -name '*.tfvars' \
+    ! -name 'backend.hcl' \
+    ! -name '*.key' \
+    ! -name '*.crt' \
+    ! -name '*.pem' \
+    ! -name 'terraform.tfstate*'  \
+    ! -name 'tmp.*' \
+    ! -name '*.env' \
+    ! -name '*.env.sh' \
+    ! -name .terraform.lock.hcl \
+    ! '('  -name .terraform -prune ')'
+) | (
+  if $test || [ x"$1" = x"-" ] ; then
+    exec cat
+  else
+    zipfile=$(readlink -f "$1")
+    cd "$srcpath"
+    zip --symlink -@ "$zipfile"
+  fi
+)
