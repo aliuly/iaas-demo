@@ -27,6 +27,10 @@ output "sn_fe_snid" {
   value = opentelekomcloud_vpc_subnet_v1.sn_fe.subnet_id
 }
 
+output "sn_fe_cidr" {
+  value = opentelekomcloud_vpc_subnet_v1.sn_fe.cidr
+}
+
 output "sn_apps_id" {
   value = opentelekomcloud_vpc_subnet_v1.sn_apps.id
 }

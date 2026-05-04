@@ -41,9 +41,9 @@ write_files:
     - zip
     - dos2unix
     - wget
-    # Install cert tools
-    - certbot
     - ssl-cert
+    - libopenscap8
+    - jq
 
 - owner: root:root
   path: /etc/ssh/sshd_config.d/casio.conf
@@ -66,7 +66,10 @@ write_files:
       fi
       # Apply the search domain to whatever interface just became routable
       resolvectl domain "$IFACE" "${dns_zone}"
-
+- path: /root/hardening
+  permissions: '0755'
+  content: "${hardening}"
+  encoding: gz+b64
 
 runcmd:
 - sed -i~ -e 's/^127\.0\.0\.1\s*.*$/127.0.0.1 localhost '$(uname -n)'/' /etc/hosts
@@ -83,5 +86,5 @@ runcmd:
     -o otc.t-systems.com
     -d agent.ces.${region}.otc.t-systems.com
 - service sshd restart
-
-
+# Run hardening script
+- bash /root/hardening

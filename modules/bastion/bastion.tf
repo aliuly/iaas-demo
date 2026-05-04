@@ -1,5 +1,14 @@
 locals {
   vm_name = "bastion1"
+  user_data = replace(templatefile("${path.module}/bastion.yaml", {
+      user = var.cloud_user.name
+      passwd = var.cloud_user.passwd
+      ssh_keys = var.cloud_user.ssh_keys
+      more_users = var.local_users
+      region = var.region
+      dns_zone = var.dns_zone
+      hardening = base64gzip(file("${path.module}/hardening.sh"))
+    }), "\r", "")
 }
 
 resource "opentelekomcloud_compute_instance_v2" "ecs_bastion1" {
@@ -21,30 +30,13 @@ resource "opentelekomcloud_compute_instance_v2" "ecs_bastion1" {
   }
 
   # Cloud-init configuration
-  user_data = replace(templatefile("${path.module}/bastion.yaml", {
-      user = var.cloud_user.name
-      passwd = var.cloud_user.passwd
-      ssh_keys = var.cloud_user.ssh_keys
-      more_users = var.local_users
-      region = var.region
-      dns_zone = var.dns_zone
-    }), "\r", "")
+  user_data = local.user_data
   tags = var.common_tags
 }
 
 #~ resource "local_file" "bastion_user_data" {
   #~ filename = "${path.module}/user_data.tmp"
-
-  #~ content = replace(templatefile("${path.module}/bastion.yaml", {
-      #~ user = var.cloud_user.name
-      #~ passwd = var.cloud_user.passwd
-      #~ ssh_keys = var.cloud_user.ssh_keys
-      #~ more_users = var.local_users
-      #~ region = var.region
-      #~ dns_zone = var.dns_zone
-      #~ device_path = local.dev_path
-    #~ }), "\r", "")
-
+  #~ content = local.user_data
   #~ file_permission = "0644"
 #~ }
 

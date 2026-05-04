@@ -48,6 +48,11 @@ variable "elb_name" {
   default     = "wp-elb"
 }
 
+variable "tls_cert_id" {
+  description = "LB TLS Certificate Id"
+  type = string
+}
+
 #~ variable "l4_flavor" {
   #~ description = "ELBv3 L4 flavor ID. Use the data source below to discover available flavors."
   #~ type        = string

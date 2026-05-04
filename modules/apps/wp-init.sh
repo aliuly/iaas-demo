@@ -7,8 +7,6 @@
 #   2. Detect scale-out (lock file on SFS) vs. first-time install
 #   3. First-time install: LAMP stack + WP-CLI + WordPress + plugins
 #   4. Every boot: symlink shared dirs, write wp-config.php, configure Nginx
-#   5. Configure Authentik OAuth2 via OpenID-Connect plugin
-#
 # All software versions are pinned via Terraform variables — nothing is
 # installed at "latest". To upgrade, update the variables and re-apply.
 # =============================================================================
@@ -65,7 +63,8 @@ mkdir -p "$WP_ROOT/wp-content"
 
 # uploads — ln -sfn handles both missing and already-correct symlink
 ln -sfn "$WP_UPLOADS_DIR" "$WP_ROOT/wp-content/uploads"
-# chown -h www-data:www-data "$WP_ROOT/wp-content/uploads"
+chown -h www-data:www-data "$WP_ROOT/wp-content/uploads"
+chown -R www-data:www-data "$WP_ROOT/wp-content/uploads/."
 
 # ── Install PG4WP drop-in BEFORE wp core install ──────────────────────────
 # PG4WP works by placing db.php into wp-content/, which WordPress loads
@@ -115,51 +114,12 @@ if [[ ! -f "$WP_ROOT/wp-content/db.php" ]]; then
   log "PG4WP drop-in installed — WordPress will use PostgreSQL"
 fi
 
-# ── Install remaining plugins manually (no DB connection required) ────────
-# All plugins are downloaded and extracted directly into wp-content/plugins/,
-# the same way PG4WP is handled above.  All plugin files are on disk before
-# wp core install runs.  wp plugin activate is called afterwards to register
-# each plugin in wp_options — that is the only step that touches the DB.
-
-install_plugin_zip() {
-  local slug="$1" url="$2"
-  local dest="$WP_ROOT/wp-content/plugins/$slug"
-  if [[ -d "$dest" ]]; then
-    log "Plugin $slug already on disk — skipping"
-    return 0
-  fi
-  log "Downloading plugin $slug …"
-  retry curl -sL "$url" -o "/tmp/${slug}.zip"
-  unzip -q "/tmp/${slug}.zip" -d "$WP_ROOT/wp-content/plugins/"
-  rm -f "/tmp/${slug}.zip"
-  chown -R www-data:www-data "$dest"
-  log "Plugin $slug installed"
-}
-
-# Fetch latest version number for a wordpress.org plugin slug
-latest_plugin_version() {
-  local slug="$1"
-  curl -sS "https://api.wordpress.org/plugins/info/1.0/${slug}.json" \
-    | jq -r '.version'
-}
-
-OIDC_VERSION=$(latest_plugin_version "daggerhart-openid-connect-generic")
-W3TC_VERSION=$(latest_plugin_version "w3-total-cache")
-
-install_plugin_zip "daggerhart-openid-connect-generic" \
-  "https://downloads.wordpress.org/plugin/daggerhart-openid-connect-generic.${OIDC_VERSION}.zip"
-
-install_plugin_zip "w3-total-cache" \
-  "https://downloads.wordpress.org/plugin/w3-total-cache.${W3TC_VERSION}.zip"
-
 # Write a version manifest to SFS for auditability on all nodes
 cat > "$WP_ROOT/.versions" <<VERSIONS
 wordpress=$WP_VERSION
 wpcli=$WPCLI_VERSION
 plugin_pg4wp=${PG4WP_VERSION:-unknown}
 plugin_pg4wp_url=${PG4WP_URL:-none}
-plugin_oidc=$OIDC_VERSION
-plugin_w3tc=$W3TC_VERSION
 installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 installed_on=$(hostname)
 VERSIONS
@@ -313,38 +273,10 @@ if [[ "$FIRST_INSTALL" == "true" ]]; then
   #~ fi
 
   # ── Activate plugins (DB now exists, files already on disk) ──────────────
-  log "Activating plugins …"
-  wp plugin activate daggerhart-openid-connect-generic \
-    --path="$WP_ROOT" --allow-root
-  wp plugin activate w3-total-cache \
-    --path="$WP_ROOT" --allow-root || log "w3-total-cache activation failed — non-fatal"
-
   # ── Write completion lock, release in-progress sentinel ──────────────────
   echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) installed on $(hostname)" > "$WP_INSTALL_LOCK"
   log "Install complete. Lock file written: $WP_INSTALL_LOCK"
 fi
 
-# =============================================================================
-# STEP 8 — Configure Authentik plugin options in DB (every boot, idempotent)
-# =============================================================================
-log "Applying Authentik OIDC plugin options …"
-wp option update openid_connect_generic_settings \
-  "{
-    \"login_type\": \"auto\",
-    \"client_id\": \"$AUTHENTIK_CLIENT_ID\",
-    \"client_secret\": \"$AUTHENTIK_CLIENT_SECRET\",
-    \"scope\": \"openid email profile\",
-    \"endpoint_login\": \"$AUTHENTIK_BASE_URL/application/o/authorize/\",
-    \"endpoint_userinfo\": \"$AUTHENTIK_BASE_URL/application/o/userinfo/\",
-    \"endpoint_token\": \"$AUTHENTIK_BASE_URL/application/o/token/\",
-    \"endpoint_end_session\": \"$AUTHENTIK_BASE_URL/application/o/end-session/\",
-    \"identity_key\": \"preferred_username\",
-    \"link_existing_users\": 1,
-    \"create_if_does_not_exist\": 1,
-    \"redirect_user_back\": 1,
-    \"no_sslverify\": 0
-  }" \
-  --path="$WP_ROOT" --allow-root --format=json 2>/dev/null || true
-
 log "Bootstrap complete on $(hostname) at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-log "Versions: WP=$WP_VERSION  OIDC=$OIDC_VERSION  W3TC=$W3TC_VERSION  WP-CLI=$WPCLI_VERSION"
+log "Versions: WP=$WP_VERSION  WP-CLI=$WPCLI_VERSION"

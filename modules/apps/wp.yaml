@@ -48,9 +48,16 @@ write_files:
     - php8.1-intl
     - php8.1-bcmath
     - php8.1-opcache
+    # Hardening
+    - libopenscap8
+
 - path: /tmp/wp-install.sh
   permissions: '0755'
   content: ${installer}
+  encoding: gz+b64
+- path: /tmp/wp-plugins.sh
+  permissions: '0755'
+  content: "${plugin_installer}"
   encoding: gz+b64
 - path: /tmp/db-install.sh
   permissions: '0755'
@@ -70,6 +77,12 @@ write_files:
   permissions: '0644'
   content: |
     # ── HTTP — permanent redirect to HTTPS ───────────────────────
+    # Create a variable $loggable that is 0 for health checks and 1 for everything else
+    # Prevent logs to be spammed by healtchecks
+    map $http_user_agent $loggable {
+        ~*elb-healthcheck  0;  # Matches "HealthChecker" (case-insensitive)
+        default          1;
+    }
     server {
         listen 80 default_server;
         listen [::]:80 default_server;
@@ -81,8 +94,8 @@ write_files:
         #~ listen 443 ssl;
         #~ listen [::]:443 ssl;
         #~ server_name _;
-        #~ root ${wp_config.WP_ROOT};
-        #~ index index.php;
+        root ${wp_config.WP_ROOT};
+        index index.php;
         #~ #
         #~ # Snakeoil certificate (Ubuntu ssl-cert package)
         #~ # Replace with a real certificate for production traffic.
@@ -120,7 +133,18 @@ write_files:
         location = /favicon.ico { log_not_found off; access_log off; }
         location = /robots.txt  { allow all; log_not_found off; access_log off; }
         location ~ /\. { deny all; }
+        #
+        # Only log if $loggable is 1
+        access_log /var/log/nginx/access.log combined if=$loggable;
     }
+- path: /root/hardening
+  permissions: '0755'
+  content: "${hardening}"
+  encoding: gz+b64
+- path: /root/wp-plugins/daggerhart-openid-connect-generic.json
+  permissions: '0755'
+  content: "${openidc_json}"
+  encoding: gz+b64
 
 runcmd:
 - sed -i~ -e 's/^127\.0\.0\.1\s*.*$/127.0.0.1 localhost '$(uname -n)'/' /etc/hosts
@@ -165,5 +189,15 @@ runcmd:
     -p ${jsonencode(wp_config.DB_PASSWORD)}
 # Install WordPress proper
 - /tmp/wp-install.sh
+- /tmp/wp-plugins.sh
+# Run hardening script
+- bash /root/hardening
+# We do this again because the hardening script will break things
+# including nginx
+- "DEBIAN_FRONTEND=noninteractive apt-get install -y $(sed -e 's/#.*//' -e 's/^ *- / /' /root/pkgs.txt)"
+- "systemctl unmask nginx || :"
+- "systemctl enable nginx || :"
+- "systemctl start nginx || :"
+
 
 

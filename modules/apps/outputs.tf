@@ -3,19 +3,26 @@
 # Auto Scaling
 ################################################################################
 
-output "as_config_id" {
-  description = "ID of the shared AS launch configuration"
-  value       = opentelekomcloud_as_configuration_v1.wordpress.id
-}
+#~ output "as_config_id" {
+  #~ description = "ID of the shared AS launch configuration"
+  #~ value       = opentelekomcloud_as_configuration_v1.wordpress.id
+#~ }
 
-output "as_group_az1_id" {
-  description = "ID of the AZ1 Auto Scaling group"
-  value       = opentelekomcloud_as_group_v1.az1.id
-}
+#~ output "as_group_az1_id" {
+  #~ description = "ID of the AZ1 Auto Scaling group"
+  #~ value       = opentelekomcloud_as_group_v1.az1.id
+#~ }
 
-output "as_group_az2_id" {
-  description = "ID of the AZ2 Auto Scaling group"
-  value       = opentelekomcloud_as_group_v1.az2.id
+#~ output "as_group_az2_id" {
+  #~ description = "ID of the AZ2 Auto Scaling group"
+  #~ value       = opentelekomcloud_as_group_v1.az2.id
+#~ }
+
+output "ecs_ip" {
+  value = opentelekomcloud_compute_instance_v2.ecs_appsrv1.access_ip_v4
+}
+output "ecs_dns" {
+  value = "${opentelekomcloud_compute_instance_v2.ecs_appsrv1.name}.${var.dns_zone}"
 }
 
 ################################################################################

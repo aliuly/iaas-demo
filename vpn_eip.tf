@@ -63,9 +63,4 @@ resource "opentelekomcloud_dns_recordset_v2" "dns_a_vpngw_2" {
   tags = var.common_tags
 }
 
-output "dns_vpngw" {
-  value = [
-    opentelekomcloud_dns_recordset_v2.dns_a_vpngw_1,
-    opentelekomcloud_dns_recordset_v2.dns_a_vpngw_2,
-  ]
-}
+

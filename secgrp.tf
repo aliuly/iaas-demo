@@ -85,6 +85,31 @@ resource "opentelekomcloud_networking_secgroup_rule_v2" "r_apps_allow_http" {
   security_group_id = opentelekomcloud_networking_secgroup_v2.sg_apps.id
 }
 
+resource "opentelekomcloud_networking_secgroup_rule_v2" "r_apps_allow_http2" {
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 80
+  port_range_max    = 80
+  remote_group_id   = opentelekomcloud_networking_secgroup_v2.sg_bastions.id
+  security_group_id = opentelekomcloud_networking_secgroup_v2.sg_apps.id
+}
+
+# ELBv3 health-check probes originate from internal ELB node IPs in the
+# frontend subnet, not from the ELB VIP (which carries sg-frontend).
+# Allow TCP/80 from the frontend subnet CIDR so health checks can reach
+# the app servers.
+resource "opentelekomcloud_networking_secgroup_rule_v2" "r_apps_allow_elb_healthcheck" {
+  direction         = "ingress"
+  ethertype         = "IPv4"
+  protocol          = "tcp"
+  port_range_min    = 80
+  port_range_max    = 80
+  remote_ip_prefix  = module.basis.sn_fe_cidr
+  security_group_id = opentelekomcloud_networking_secgroup_v2.sg_apps.id
+}
+
+
 ################################################################################
 # Databases
 resource "opentelekomcloud_networking_secgroup_v2" "sg_postgres" {
@@ -125,20 +150,3 @@ resource "opentelekomcloud_networking_secgroup_rule_v2" "sfs_udp" {
   security_group_id = opentelekomcloud_networking_secgroup_v2.sg_postgres.id
 }
 
-output "ids" {
-  value = {
-    sg_postgres = opentelekomcloud_networking_secgroup_v2.sg_postgres.id,
-    sg_apps = opentelekomcloud_networking_secgroup_v2.sg_apps.id,
-    sg_fe = opentelekomcloud_networking_secgroup_v2.sg_fe.id,
-    sg_bastions = opentelekomcloud_networking_secgroup_v2.sg_bastions.id,
-  }
-}
-
-output "groups" {
-  value = [
-    opentelekomcloud_networking_secgroup_v2.sg_postgres,
-    opentelekomcloud_networking_secgroup_v2.sg_apps,
-    opentelekomcloud_networking_secgroup_v2.sg_fe,
-    opentelekomcloud_networking_secgroup_v2.sg_bastions,
-  ]
-}

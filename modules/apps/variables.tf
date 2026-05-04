@@ -136,6 +136,12 @@ variable "authentik_base_url" {
   type        = string
 }
 
+variable "authentik_app_slug" {
+  description = "Authentik application slug (short name shown in Applications list)"
+  type        = string
+  default     = "wordpress"
+}
+
 variable "authentik_client_id" {
   description = "OAuth2 Client ID registered in Authentik for WordPress"
   type        = string

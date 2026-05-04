@@ -35,18 +35,6 @@ variable "dns_zone" {
   type = string
 }
 
-# Used for Let's encrypt certificates
-variable "le_email" {
-  description = "E-Mail address to send to Let's Encrypt"
-  type = string
-}
-variable "testing_tls" {
-  description = "Test TLS cert requests"
-  type = bool
-  default = false
-}
-
-
 # Default login
 
 variable "cloud_user" {
@@ -119,5 +107,20 @@ variable "authentik_client_secret" {
   description = "OAuth2 Client Secret from Authentik"
   type        = string
   sensitive   = true
+}
+
+# ----- TLS Certificates -----
+variable "acme_otc_creds" {
+  description = "Used to configure the OTC ACME provider"
+  type = object({
+    OTC_USER_NAME    = string
+    OTC_PASSWORD     = string
+    OTC_DOMAIN_NAME  = string
+    OTC_PROJECT_NAME = string
+  })
+}
+variable "le_email" {
+  description = "E-Mail address to send to Let's Encrypt"
+  type = string
 }
 

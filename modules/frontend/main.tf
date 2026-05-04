@@ -32,63 +32,6 @@ resource "opentelekomcloud_networking_port_secgroup_associate_v2" "elb_sg" {
 }
 
 ################################################################################
-# Backend pool  (HTTP, ROUND_ROBIN)
-# WordPress backends receive plain HTTP from the ELB; HTTPS is terminated here.
-################################################################################
-
-resource "opentelekomcloud_lb_pool_v3" "wordpress_http" {
-  name            = "${var.elb_name}-pool-http"
-  loadbalancer_id = opentelekomcloud_lb_loadbalancer_v3.wordpress.id
-  protocol        = "HTTP"
-  lb_algorithm    = "ROUND_ROBIN"
-
-  # Cookie-based session persistence keeps a user on the same WordPress node.
-  # This is important for wp-login sessions and WooCommerce carts.
-  session_persistence {
-    type        = "HTTP_COOKIE"
-  }
-}
-
-################################################################################
-# Backend members  (one per WordPress instance)
-################################################################################
-
-#~ resource "opentelekomcloud_lb_member_v3" "wordpress" {
-  #~ for_each = var.backend_instances
-
-  #~ name          = "${var.elb_name}-member-${each.key}"
-  #~ pool_id       = opentelekomcloud_lb_pool_v3.wordpress_http.id
-  #~ address       = each.value
-  #~ protocol_port = var.backend_port
-  #~ subnet_id     = var.subnet_id
-
-  #~ # weight defaults to 1 – equal distribution across members
-#~ }
-
-################################################################################
-# Health monitor  (HTTP, checks WordPress's /wp-login.php or /)
-################################################################################
-
-resource "opentelekomcloud_lb_monitor_v3" "wordpress" {
-  pool_id     = opentelekomcloud_lb_pool_v3.wordpress_http.id
-  type        = "HTTP"
-
-  # How often to probe (seconds)
-  delay       = 10
-  # Probe must succeed within this many seconds
-  timeout     = 5
-  # Mark UP after this many consecutive successes
-  max_retries = 3
-  # Mark DOWN after this many consecutive failures
-  max_retries_down = 3
-
-  # WordPress always returns 200 on its root; avoid wp-admin (may redirect)
-  url_path    = "/"
-  http_method = "GET"
-  expected_codes = "200,301,302"
-}
-
-################################################################################
 # Listener 1 – HTTPS on port 443  (TERMINATED_HTTPS)
 #
 # • Terminates TLS using the certificate above
@@ -106,14 +49,15 @@ resource "opentelekomcloud_lb_listener_v3" "https" {
   protocol_port = 443
 
   # TLS certificate
-  default_tls_container_ref = data.opentelekomcloud_lb_certificate_v3.wordpress.id
+  default_tls_container_ref = var.tls_cert_id
 
   # Recommended TLS 1.2+ (PCI-DSS / best practice)
   # Enforce: TLS-1-2-FS-WITH-1-3  (TLS 1.3 preferred, TLS 1.2 with forward secrecy as fallback)
   tls_ciphers_policy = "tls-1-2-fs-with-1-3"
 
-  # Default pool – sends traffic to WordPress backends over HTTP/80
-  default_pool_id = opentelekomcloud_lb_pool_v3.wordpress_http.id
+  # default_pool_id is intentionally absent: the pool references this listener
+  # via listener_id instead, reversing the dependency so OTC can destroy the
+  # pool before the listener without a "pool still attached" rejection.
 
   # Forward the original client IP and scheme so WordPress generates correct URLs
   insert_headers {
@@ -151,10 +95,76 @@ resource "opentelekomcloud_lb_listener_v3" "http_redirect" {
 ################################################################################
 
 resource "opentelekomcloud_lb_l7policy_v2" "http_to_https" {
-  name                = "${var.elb_name}-http-to-https"
-  action              = "REDIRECT_TO_LISTENER"
-  listener_id         = opentelekomcloud_lb_listener_v3.http_redirect.id
+  name                 = "${var.elb_name}-http-to-https"
+  action               = "REDIRECT_TO_LISTENER"
+  listener_id          = opentelekomcloud_lb_listener_v3.http_redirect.id
   redirect_listener_id = opentelekomcloud_lb_listener_v3.https.id
-  description         = "Redirect all HTTP traffic to HTTPS (301)"
-  position            = 1
+  description          = "Redirect all HTTP traffic to HTTPS (301)"
+  position             = 1
+
+  # OTC tracks redirect_listener_id as a back-reference on the HTTPS listener;
+  # make the dependency explicit so destroy always removes the policy first.
+  depends_on = [opentelekomcloud_lb_listener_v3.https]
+}
+
+################################################################################
+# Backend pool  (HTTP, ROUND_ROBIN)
+# WordPress backends receive plain HTTP from the ELB; HTTPS is terminated here.
+#
+# Attached via listener_id (not loadbalancer_id) so the pool depends on the
+# listener. OTC destroys the pool before the listener, avoiding the
+# "pool still attached" error when tearing down the module.
+################################################################################
+
+resource "opentelekomcloud_lb_pool_v3" "wordpress_http" {
+  name        = "${var.elb_name}-pool-http"
+  listener_id = opentelekomcloud_lb_listener_v3.https.id
+  protocol    = "HTTP"
+  lb_algorithm = "ROUND_ROBIN"
+
+  # Cookie-based session persistence keeps a user on the same WordPress node.
+  # This is important for wp-login sessions and WooCommerce carts.
+  session_persistence {
+    type = "HTTP_COOKIE"
+  }
+}
+
+################################################################################
+# Backend members  (one per WordPress instance)
+################################################################################
+
+#~ resource "opentelekomcloud_lb_member_v3" "wordpress" {
+  #~ for_each = var.backend_instances
+
+  #~ name          = "${var.elb_name}-member-${each.key}"
+  #~ pool_id       = opentelekomcloud_lb_pool_v3.wordpress_http.id
+  #~ address       = each.value
+  #~ protocol_port = var.backend_port
+  #~ subnet_id     = var.subnet_id
+
+  #~ # weight defaults to 1 – equal distribution across members
+#~ }
+
+################################################################################
+# Health monitor  (HTTP, checks WordPress's /wp-login.php or /)
+################################################################################
+
+resource "opentelekomcloud_lb_monitor_v3" "wordpress" {
+  pool_id = opentelekomcloud_lb_pool_v3.wordpress_http.id
+  type    = "HTTP"
+
+  # How often to probe (seconds)
+  delay   = 10
+  # Probe must succeed within this many seconds
+  timeout = 5
+  # Mark UP after this many consecutive successes
+  max_retries = 3
+  # Mark DOWN after this many consecutive failures
+  max_retries_down = 3
+
+  # WordPress always returns 200 on its root; avoid wp-admin (may redirect)
+  url_path       = "/"
+  http_method    = "GET"
+  expected_codes = "200,301,302"
+
 }
