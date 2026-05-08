@@ -1,6 +1,7 @@
 # IaaS Demo — T Cloud Public
 
-A [OpenTofu](https://opentofu.org/) deployment that provisions a production-style WordPress environment on [T Cloud Public](https://public.t-cloud.com/en) (Open Telekom Cloud). The environment connects to an on-premises network via VPN and uses [Authentik](https://goauthentik.io/) as an SSO identity provider.
+A [OpenTofu](https://opentofu.org/) deployment that provisions a production-style WordPress environment on
+[T Cloud Public](https://t-cloud-public.com/en) (Open Telekom Cloud). The environment connects to an on-premises network via VPN and uses [Authentik](https://goauthentik.io/) as an SSO identity provider.
 The appliction is set-up as an internal facing application.
 
 ---
